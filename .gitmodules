@@ -1,0 +1,3 @@
+[submodule "pybullet_sim/pybullet_kuka_iiwa/lbr_iiwa7_r800-urdf-package"]
+	path = pybullet_sim/pybullet_kuka_iiwa/lbr_iiwa7_r800-urdf-package
+	url = git@github.com:bhtxy0525/lbr_iiwa7_r800-urdf-package.git
