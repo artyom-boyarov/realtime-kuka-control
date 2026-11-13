@@ -1,19 +1,30 @@
 #!/usr/bin/env python3
-"""Control all iiwa joints toward zero using UDP angle feedback."""
+"""Control all iiwa joints toward a fixed pose using UDP angle feedback."""
 import argparse
 import math
 import socket
 import struct
 import time
 
+import numpy as np
+
 PACKET = struct.Struct('<7f')
+TARGET = np.deg2rad(np.array([
+    -13.67,
+    -59.22,
+    143.27,
+    81.81,
+    -43.18,
+    53.98,
+    69.82,
+]))
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--kp', type=float, default=100.0, help='proportional gain (N m/rad)')
-    parser.add_argument('--kd', type=float, default=10.0, help='derivative gain (N m s/rad)')
-    parser.add_argument('--max-torque', type=float, default=100.0, help='per-joint torque limit (N m)')
+    parser.add_argument('--kp', type=float, default=500.0, help='proportional gain (N m/rad)')
+    parser.add_argument('--kd', type=float, default=400.0, help='derivative gain (N m s/rad)')
+    parser.add_argument('--max-torque', type=float, default=200.0, help='per-joint torque limit (N m)')
     args = parser.parse_args()
     if (not all(math.isfinite(x) for x in (args.kp, args.kd, args.max_torque))
             or args.kp < 0 or args.kd < 0 or args.max_torque <= 0):
@@ -39,8 +50,8 @@ def main():
             now = time.monotonic()
             dt = now - previous_time if previous_time is not None else 0
             velocities = [(q - old) / dt for q, old in zip(angles, previous)] if dt > 0 else [0.0] * 7
-            torques = [max(-args.max_torque, min(args.max_torque, -args.kp * q - args.kd * v))
-                       for q, v in zip(angles, velocities)]
+            torques = [max(-args.max_torque, min(args.max_torque, -args.kp * (q - target) - args.kd * v))
+                       for q, v, target in zip(angles, velocities, TARGET)]
             commands.sendto(PACKET.pack(*torques), ('127.0.0.1', 7200))
             previous, previous_time = angles, now
     except KeyboardInterrupt:

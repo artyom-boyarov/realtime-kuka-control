@@ -7,6 +7,7 @@ import socket
 import struct
 import tempfile
 import time
+import numpy as np
 
 import pybullet as p
 
@@ -46,6 +47,8 @@ def main():
         p.setGravity(0, 0, -9.81)
         p.setTimeStep(1 / args.rate)
         p.setJointMotorControlArray(robot, joints, p.VELOCITY_CONTROL, forces=[0] * 7)
+        # Effort limits from the URDF, used to hold position before torque commands arrive.
+        hold_forces = [p.getJointInfo(robot, joint)[10] for joint in joints]
         torque = (0.0,) * 7
         last_command = float('-inf')
         deadline = time.monotonic()
@@ -60,11 +63,19 @@ def main():
                     values = PACKET.unpack(data)
                     if all(math.isfinite(value) for value in values):
                         torque, last_command = values, time.monotonic()
+                        print(f"Torque command: {', '.join(f'{value:.3f}' for value in torque)}")
             if time.monotonic() - last_command > args.timeout:
-                torque = (0.0,) * 7
-            p.setJointMotorControlArray(robot, joints, p.TORQUE_CONTROL, forces=torque)
+                # No fresh torque command: hold a safe zero pose instead of
+                # free-falling under gravity, which would otherwise drive a
+                # joint into its mechanical limit before control engages.
+                p.setJointMotorControlArray(robot, joints, p.POSITION_CONTROL,
+                                             targetPositions=[0.2] * 7, forces=hold_forces)
+            else:
+                print(f"Applying torque: {', '.join(f'{value:.3f}' for value in torque)}")
+                p.setJointMotorControlArray(robot, joints, p.TORQUE_CONTROL, forces=torque)
             p.stepSimulation()
             angles = [joint[0] for joint in p.getJointStates(robot, joints)]
+            print(f"Joint angles: {', '.join(f'{np.rad2deg(angle):.3f}' for angle in angles)}")
             state.sendto(PACKET.pack(*angles), ('127.0.0.1', 7201))
             deadline += 1 / args.rate
             delay = deadline - time.monotonic()
